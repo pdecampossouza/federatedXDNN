@@ -38,9 +38,6 @@ ProtoPNet+xDNN/
 ├── shap_siteA/ # SHAP visual explanations for siteA
 └── shap_siteB/ # SHAP visual explanations for siteB
 
-yaml
-Copiar código
-
 ---
 
 ## ⚙️ Installation
