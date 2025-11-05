@@ -1,0 +1,907 @@
+\documentclass[journal,twocolumn,letterpaper]{IEEEJERM}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+\usepackage[hyphens]{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cite}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{subcaption}
+
+\newcommand{\projectname}{}
+\newcommand{\paperheadline}{}
+
+\begin{document}
+\title{SBBrasil TrainSheets:From PDF to Dental View Classification: A Human-in-the-Loop Dataset and Pipeline for Oral Health Imaging}
+
+\author{
+\IEEEauthorblockN{Paulo Vitor de Campos Souza}
+\IEEEauthorblockA{NOVA Information Management School (NOVA IMS), Universidade Nova de Lisboa, Campus de Campolide, 1070-312, Lisbon, Portugal\\
+\texttt{psouza@novaims.unl.pt}}
+}
+
+% The paper headers
+\markboth{IEEE Journal of Biomedical and Health Informatics}
+{de Campos Souza \MakeLowercase{\textit{et al.}}: From PDF to Dental View Classification}
+\maketitle
+
+\begin{abstract}
+
+\textbf{Objective:} Oral health is increasingly recognized as a public priority due to its strong association with overall well-being. However, both the training of evaluators and the development of computational models are limited by the scarcity of contextualized, open dental image datasets. This study aims to design a reproducible data-engineering pipeline to transform public PDF manuals from national oral-health programs into structured, analyzable image corpora suitable for translational research.
+
+\textbf{Methods and Procedures:} The proposed pipeline, named {SBBrasil TrainSheets}, automates image extraction, cataloging by volunteer and anatomical view, and feature embedding for unsupervised quality control. A human-in-the-loop labeling interface prioritizes uncertain samples to maximize annotation efficiency. As a proof of usefulness, a lightweight baseline classifier was trained to distinguish dental views (frontal vs.\ occlusal) using a volunteer-level split.
+
+\textbf{Results:} The system successfully retrieved and organized clinical-grade images from public oral-health manuals, enabling reproducible dataset construction and quality assurance. The classification task achieved 96.4\% accuracy after short calibration, demonstrating the dataset’s validity for computer vision training and evaluation.
+
+\textbf{Conclusion:} This approach unlocks a previously inaccessible source of real-world dental data, transforming static public manuals into structured datasets that support reproducible, interpretable, and open research in oral-health imaging.
+
+\textbf{Clinical Impact:} The pipeline enables scalable generation of clinically relevant datasets from existing records, supporting the education of field evaluators, improving data governance, and expanding access to digital training materials in dental public health.
+
+\textbf{Clinical and Translational Impact Statement:} 
+This work supports {Public Health} translation by converting national oral-health records into structured digital datasets that enhance clinical education, population surveillance, and data-driven decision support.
+\end{abstract}
+
+
+\begin{IEEEkeywords}
+Dental imaging, Oral Health, Human-in-the-loop, Public Health Dentistry, View classification, PCA, SVM.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Oral health plays a central role in well-being and social participation. Population-level programs depend on large-scale data collection and trained evaluators to assess conditions across age groups~\cite{ardakani2025global}. Computer-vision methods can meaningfully support this effort by standardizing view identification, assisting screening and triage, and enabling quality control across large image corpora. 
+
+However, real-world images are difficult to obtain and reuse \cite{chiu2020assessing}: photographic material often resides in static PDF manuals, while access to equipment, trained personnel, and controlled acquisition protocols is limited. This gap impedes both the continuous training of evaluators and the development of computational models that could assist screening, triage, and quality assurance.
+
+In Brazil, nationwide oral-health surveillance is organized through structured field surveys in which trained interviewers and clinical evaluators collect demographic data, clinical findings, and photographic evidence using standardized protocols. These efforts are coordinated under the \emph{SB Brasil} initiative, part of the broader \emph{Brasil Sorridente} public-health program \cite{ms_sb_brasil_2023}. Evaluators are trained and calibrated through formal procedures and enter observations into dedicated information systems (Fig \ref{fig:training}); however, the calibration process itself relies predominantly on static PDF manuals that bundle exemplar cases and grading instructions for multiple modules (e.g., deciduous and permanent dentition, occlusal indices, trauma, and others). 
+
+While highly effective for human instruction, this modality leaves substantial value untapped: (i) the underlying images are not machine-readable; (ii) contextual metadata (module, volunteer, acquisition order) are not exposed as structured datasets; and (iii) no automation supports view standardization, quality control, or iterative expert calibration at scale. Consequently, the same knowledge base that trains evaluators cannot be readily repurposed for computational modeling, cross-cohort analytics, or the development of decision-support tools.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/Treino1.png}
+    \includegraphics[width=0.5\linewidth]{figures/Abcess.png}
+    \caption{Training of oral health professionals. Identification of a fistula in a frontal view of a volunteer. Source: \cite{ms_sb_brasil_2023}}
+    \label{fig:training}
+\end{figure}
+
+This study addresses the absence of structured, machine-readable datasets in national oral-health calibration programs. 
+Using official examiner-training manuals from Brazil’s large-scale oral-health initiatives \cite{ms_sb_brasil_2023}, the proposed framework extracts, standardizes, and validates photographic content for computer vision applications. 
+Such structured data transformation follows best practices observed in other medical imaging domains, where curation pipelines have proven essential for reproducibility and secondary data use~\cite{fedorov2023national,prior2020open}.
+
+We present {SBBrasil TrainSheets}, a complete and reproducible system that bridges this gap by converting multi-module PDF manuals into a curated image corpus and by providing an engineering toolkit for analysis and incremental labeling. The pipeline (Fig.~\ref{fig:pca-global}) extracts images, preserves context (module, volunteer, and sequence), generates a traceability, computes fixed embeddings for unsupervised exploration (clustering and PCA visualization), and exposes two practical user interfaces: a dashboard for dataset analytics and an interactive labeler that supports human-in-the-loop curation with uncertainty prioritization. The main contributions in this paper are listed below:
+
+\subsection*{Contributions}
+\begin{itemize}
+  \item {Acquisition \& curation from PDFs:} robust extraction that filters out non-informative graphics (e.g., logos/footers), preserves per-volunteer ordering, and writes a machine-readable manifest.
+  \item {Reproducible tooling:} feature embeddings, unsupervised clustering and PCA maps, error galleries, and an analytics dashboard to inspect coverage and quality.
+  \item {Human-in-the-loop labeling:} an interactive reviewer that surfaces low-margin cases, records decisions to \texttt{views.csv}, and enables incremental retraining.
+  \item {Baseline evidence:} a lightweight view-classification model on permanent dentition (frontal vs.\ occlusal) with volunteer-level splits, achieving {96.4\%} accuracy.
+  \item {Path to future work:} the dataset and codebase facilitate expansion to deciduous dentition, trauma/PUFA modules, view taxonomies (including lateral), and downstream tasks such as lesion or tooth-pattern identification with deep learning.
+\end{itemize}
+
+This work is a {dataset-and-pipeline} paper: we prioritize transparent data engineering, inspectability, and reproducibility over model novelty. Citations to prior datasets in dentistry, view classification in medical imaging, and human-in-the-loop/active learning will be added in the final version.
+
+The remainder of this paper is organized as follows. Section~\ref{sec:background} introduces the main concepts that support the problem formulation and contextualize the oral-health data sources used in this study. Section~\ref{sec:methods} details the proposed pipeline, including the evaluation and extraction of dental images from PDF manuals and their conversion into structured datasets. Section~\ref{sec:unsupervised} describes the unsupervised techniques employed to verify the validity and quality of the extracted images. Section~\ref{sec:results} presents the results obtained during the construction and validation of the proposed framework. Section~\ref{sec:ethics} discusses ethical aspects related to data collection and usage. Finally, Section~\ref{sec:conclusion} summarizes the main conclusions and outlines future research directions.
+
+
+\section{Background} \label{sec:background}
+This section presents the institutional and methodological context of the SB Brasil national oral–health survey, as well as the training framework adopted for examiner calibration, from which the visual materials used in this work were derived.
+
+
+\subsection{Oral Health in the Public Health Context}
+
+Oral health is an integral component of overall public health, directly influencing nutrition, communication, and quality of life. The World Health Organization (WHO) identifies oral conditions such as dental caries, periodontal disease, and tooth loss among the most prevalent chronic diseases worldwide, affecting approximately 3.5~billion people~\cite{peres2019oral}. Beyond functional and esthetic consequences, oral diseases have substantial psychosocial and economic impacts, contributing to absenteeism, reduced productivity, and impaired social participation~\cite{singh2021public}. For these reasons, oral health has become increasingly recognized as a key element of universal health coverage and sustainable development~\cite{world2022global}.
+
+In large population-based systems such as the Brazilian Unified Health System (SUS)~\cite{martins2016relationship}, the surveillance of oral diseases plays a strategic role in guiding preventive policies and the allocation of human and financial resources. Brazil stands out internationally for having developed one of the most comprehensive public dental-care networks in the world, structured around the integration of oral health into the primary-care level through the {Family Health Strategy}~\cite{ms_sb_brasil_2023}. This integration enables preventive interventions, continuous monitoring, and data-driven planning at the community level, ensuring that oral health is treated as an inseparable part of general health promotion.
+
+Over the past two decades, this approach has led to major improvements in population coverage and access to dental services, supported by national programs such as \textit{Brasil Sorridente} (Smiling Brazil)~\cite{yu2024oral}. Despite these advances, significant challenges persist: the uneven geographic distribution of services, the persistence of social inequalities in oral health outcomes, and the need for modern information systems capable of supporting epidemiological surveillance at scale. In this context, the systematic recording and reuse of visual data—such as clinical photographs collected during training or field calibration—represent promising but underexplored opportunities for digital transformation within public oral-health infrastructure.
+
+
+\subsection{The {Brasil Sorridente} Program}
+
+Launched in 2004, the {Brasil Sorridente} (Fig. \ref{fig:brasilsorridente}) program consolidated the National Oral Health Policy (NOHP- in portuguese: PNSB) as a strategic branch of the Unified Health System (in portuguese: SUS). Its primary goals are to expand access to dental care, strengthen preventive and restorative services, and provide specialized treatment through the creation of Dental Specialty Centers (DSC)~\cite{ms_sb_brasil_2023}. Beyond expanding clinical infrastructure, the program introduced an integrated monitoring framework that aligns epidemiological data, health promotion, and service delivery~\cite{ms_sb_brasil_2023}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/Brasil Sorridente.png}
+    \caption{Smiling Brazil WebSite. Source: https://www.gov.br/saude/pt-br/composicao/saps/brasil-sorridente}
+    \label{fig:brasilsorridente}
+\end{figure}
+
+The program operates on the principle that oral health is an inseparable component of general health and that equitable access to care must extend to all regions and social groups. This approach has resulted in the incorporation of oral-health teams into primary-care units across the country, improving both population coverage and continuity of care~\cite{yu2024oral}. As a result, Brazil has become a global reference in the inclusion of dental services within universal health systems, combining preventive, curative, and educational actions at the community level.
+
+In addition to expanding the care network, {Smiling Brazil} established new information systems and data-driven tools to support local management and national policy evaluation. Continuous surveillance mechanisms allow municipalities to track service indicators, treatment outcomes, and the distribution of oral-health resources~\cite{ms_sb_brasil_2023}. This data-centric orientation supports evidence-based decision-making, although it still depends on manual data entry and limited interoperability across systems. 
+
+The program’s emphasis on standardized training and evaluator calibration directly connects it to this study. Through official manuals and structured casebooks, {Smiling Brazil} ensures that field examiners follow consistent diagnostic criteria and visual standards when participating in epidemiological surveys. These materials—developed for educational and calibration purposes—constitute the foundation from which the image datasets analyzed in this work were derived \cite{ms_sb_brasil_2023}.
+
+
+\subsection{The SB Brasil Epidemiological Surveys}
+
+Within the Smiling Brazil framework, the Ministry of Health launched the SB Brasil series of nationwide oral-health surveys, conducted in 1986, 1996, 2003, 2010, and most recently in 2023 (Fig. \ref{fig:brasilsorridenteprogram}). These large-scale epidemiological efforts represent the most comprehensive oral-health surveillance initiative in Latin America~\cite{roncalli2012sbbrasil}. Designed to monitor oral-disease prevalence and guide public policy, the surveys follow the World Health Organization (WHO) methodology for population-based oral-health assessments~\cite{ms_sb_brasil_2023}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/BrasilSorridenteReport.png}
+    \caption{Leaflet inviting the population to participate in the oral health survey and outlining the procedures for determining the regions to be covered by the survey based on geoprocessing. Source: \cite{ms_sb_brasil_2023}}
+    \label{fig:brasilsorridenteprogram}
+\end{figure}
+
+Each survey cycle involves a multistage sampling process that ensures representativeness across age groups, regions, and urbanization levels. Clinical examinations are conducted by trained dentists—designated as field examiners—who collect both quantitative and qualitative data, including dental caries experience (DMFT/dmft), periodontal status, tooth loss, prosthetic needs, trauma, fluorosis, and other conditions~\cite{ms_sb_brasil_2023}. To complement these data, participants’ demographic and behavioral profiles are recorded using structured questionnaires, enabling a multidimensional view of oral-health determinants (Fig. \ref{fig:procedure}).
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/BrasilSorridenteProcedimento.png}
+    \caption{Oral health inspection procedures during SBBrasil. Source: \cite{ms_sb_brasil_2023}}
+    \label{fig:procedure}
+\end{figure}
+
+A critical component of the \textit{SB Brasil} methodology is the standardization and calibration of clinical examiners, which ensure data consistency across states and municipalities. Calibration is achieved through theoretical modules, case-based training, and photographic assessments of diagnostic agreement between evaluators~\cite{ms_sb_brasil_2023}. This structured approach minimizes inter-examiner variability and enhances reproducibility, a key prerequisite for the statistical reliability of large-scale epidemiological data.
+
+In addition to examiner calibration, a pilot study is conducted to prevalidate instruments and field procedures, enabling targeted refinements that reduce operational risks and strengthen feasibility, internal validity, and overall data quality.
+
+The most recent edition, SB Brasil 2023, introduced fully digital data collection, employing tablet-based forms (Fig. \ref{fig:equipaments}) and integrated data-transmission systems to central servers~\cite{ms_sb_brasil_2023}. Standardized technical reports and examiner manuals are provided in PDF format to guarantee uniform implementation across municipalities. Although these resources are essential for methodological consistency, their visual content—photographic exemplars used during examiner calibration—remains inaccessible for computational analysis. As a result, a rich visual archive that could support computer-vision research, educational automation, and model interpretability has remained largely unexplored.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figures/EquipamentosSBBrasil.png}
+    \caption{Devices used for reading and collecting data during research. Source: \cite{ms_sb_brasil_2023}}
+    \label{fig:equipaments}
+\end{figure}
+
+This study addresses that gap by systematically extracting and structuring those visual materials into a machine-readable corpus. By repurposing the same calibration resources used for human training, we provide a foundation for reproducible dataset construction and subsequent AI-driven analysis within the public oral-health domain.
+
+
+\subsection{Tooth Categories and Diagnostic Indices in Examiner Training}
+
+Within the SB Brasil calibration framework, clinical examiners—dentists trained to collect standardized epidemiological data—are instructed to evaluate two main categories of teeth: {deciduous} (primary) and {permanent} dentition~\cite{berk1972comparison}. Deciduous teeth, also known as baby teeth, are the first to erupt and are gradually replaced by permanent teeth throughout childhood and adolescence. Because the clinical manifestations, treatment needs, and diagnostic codes differ across these dentitions, national training protocols provide specific visual references and procedural guidelines for each~\cite{ms_sb_brasil_2023}.
+
+Several diagnostic indices are emphasized throughout the SB Brasil calibration manuals, among which the PUFA and dental trauma indices figure prominently. Both are widely recognized in oral-epidemiological research as extensions of traditional caries-assessment frameworks, emphasizing not only the presence of lesions but also their clinical consequences~\cite{ms_sb_brasil_2023}.
+
+\subsubsection{PUFA Index.}
+The PUFA index ({P}ulpal involvement, {U}lceration, {F}istula, {A}bscess) records the visible consequences of untreated dental caries~\cite{monse2010pufa}. It complements the traditional DMFT/dmft system by shifting focus from lesion occurrence to lesion severity and its impact on surrounding tissues. Each tooth is individually evaluated and assigned one of the following codes:
+
+\begin{itemize}
+    \item {0} – No clinical consequence of untreated caries;
+    \item {P} – Pulpal involvement;
+    \item {U} – Ulceration caused by root fragments;
+    \item {F} – Fistula;
+    \item {A} – Abscess.
+\end{itemize}
+
+This classification provides a more comprehensive measure of oral disease burden, particularly relevant in populations with limited access to timely dental care~\cite{dedeke2014findings,praveen2015co}. During calibration, examiners are trained to identify these conditions visually in standardized photographic examples, ensuring consistent recognition of diagnostic boundaries across evaluators.
+
+\subsubsection{Dental Trauma Index.}
+Dental trauma is another key category within the SB Brasil framework, reflecting the frequency and severity of tooth injuries across age groups~\cite{de2009knowledge, edentrauma, ms_sb_brasil_2023}. The dental trauma assessment classifies teeth according to the type and extent of injury using the following standardized codes:
+
+\begin{itemize}
+    \item {0} – No trauma;
+    \item {1} – Treated fracture;
+    \item {2} – Enamel fracture;
+    \item {3} – Enamel and dentin fracture;
+    \item {4} – Fracture with pulpal involvement;
+    \item {5} – Tooth loss due to trauma;
+    \item {6} – Other damage;
+    \item {9} – Excluded tooth.
+\end{itemize}
+
+Both indices—PUFA and trauma—are applied during the calibration process through visual inspection of intraoral photographs and case simulations. Examiners record diagnostic codes based on the most severe observed condition, following WHO and national guidelines~\cite{de2009knowledge}. The training emphasizes accuracy, reproducibility, and inter-examiner reliability, ensuring that all professionals interpret diagnostic criteria uniformly. The visual materials used—such as those extracted and standardized in this work—were originally designed to illustrate these diagnostic situations and to support examiner calibration prior to national field data collection campaigns.
+
+
+
+\subsection{Data Availability and Challenges}
+
+Despite the richness of the SB Brasil initiative, most of its documentation and image-based content remain confined to unstructured PDF reports and examiner training manuals. Although these materials are publicly available, their visual data—such as intraoral photographs, diagnostic exemplars, and case-based illustrations—are not machine-readable or standardized for computational reuse. As a result, there is limited interoperability between public-health documentation and machine-learning pipelines, constraining innovation in automated diagnostic and quality-control research~\cite{ferreira2025calibration}.
+
+This limitation is symptomatic of a broader challenge in public-health informatics: while large-scale data are routinely collected for administrative and training purposes, their formats are rarely designed for secondary analysis~\cite{ferreira2025calibration}. In practice, valuable information remains trapped in static formats, with no standardized metadata, identifiers, or relational structures that enable reproducibility or dataset integration. These barriers prevent the creation of interoperable repositories capable of supporting AI-based oral-health research, automated calibration tools, and transparent model evaluation~\cite{ferreira2025calibration}.
+
+From a translational perspective, enabling structured access to these visual materials represents both a technical and scientific opportunity. Technically, it would facilitate the development of annotated datasets that can be used to benchmark algorithms for lesion detection, tooth segmentation, or view classification. Scientifically, it enables reproducible studies that align with the principles of open data and interpretable AI in healthcare~\cite{ferreira2025calibration}. This work addresses that gap by proposing a reproducible, privacy-conscious pipeline that systematically extracts, organizes, and documents such visual information, transforming unstructured materials into machine-readable assets for computational analysis.
+
+
+\subsection{Related Analyses Using SB Brasil and Broader Oral–Health Datasets}
+
+Beyond our effort to transform public training materials into a machine–learning–ready, image–centric dataset, there is a growing body of research that leverages SB Brasil and related oral–health data to address epidemiological and health-service questions. These studies exemplify how structured, population-level data can support the planning and evaluation of oral-health policies within the Unified Health System (SUS)~\cite{ferreira2025calibration}.
+
+Machine-learning and statistical modeling have been applied to explore associations between care-seeking behavior and clinical outcomes, showing that the timing of the last dental visit correlates with tooth loss severity~\cite{bomfim2023last}. At a broader scale, predictive models have been used to analyze sociodemographic inequalities in the burden of periodontitis, revealing persistent disparities across regions and development levels~\cite{ghanem2025sociodemographic}. These findings reinforce the importance of data-driven approaches to identify vulnerable populations and guide preventive interventions.
+
+During the COVID-19 pandemic, information and communication technologies (ICTs) were also tested as strategies to mitigate reduced access to primary dental care, including randomized interventions integrated into the SUS network~\cite{natal2022using}. Complementary studies have examined the distribution of dental services among older adults, using decomposition methods to quantify the socioeconomic inequality in access and utilization~\cite{bof2025factors}. Collectively, these analyses illustrate how national datasets can support both clinical research and public-health management, particularly when combined with computational and statistical tools.
+
+Our contribution is therefore complementary and novel: we introduce an interpretable, reproducible workflow that bridges oral-health epidemiology and computer vision. By converting examiner-calibration materials into a machine-readable corpus, this work enables future studies in lesion detection, view classification, and explainable AI for population-level oral-health assessment~\cite{ferreira2025calibration}.
+
+
+
+
+\subsection{Scientific Motivation and Research Gap}
+
+While the SB Brasil program offers unparalleled epidemiological coverage and methodological rigor, it has not yet been systematically leveraged to develop open, labeled datasets for computer-vision research in dentistry. The absence of standardized, annotated image collections limits the ability to train, benchmark, and validate models that could assist in oral lesion detection, tooth segmentation, or view classification~\cite{ferreira2025calibration}. As a result, most computational studies in this domain rely on small, private datasets or synthetic imagery, which restricts reproducibility and generalization~\cite{ferreira2025calibration}.
+
+From a translational perspective, this limitation constrains the integration of artificial intelligence (AI) tools into population-level oral-health management. Despite the growing use of deep learning in medical imaging~\cite{li2024application}, dentistry still lacks open, interpretable datasets that capture the diversity of real-world conditions encountered in public-health contexts. Existing dental image repositories are typically clinic-based, de-identified, and disconnected from standardized diagnostic frameworks such as PUFA or trauma indices, reducing their relevance for epidemiological applications~\cite{ferreira2025calibration}.
+
+This work addresses that gap by introducing a reproducible pipeline to extract, normalize, and label dental images directly from public examiner-training materials. By transforming calibration manuals into structured, machine-readable datasets, the proposed approach enables secondary use of visual data for computational modeling while preserving their original educational and diagnostic context. The result is an interpretable, scalable foundation for developing explainable AI models that complement existing epidemiological workflows and support public-health research in oral disease surveillance.
+
+
+
+\section{Dataset Construction}
+\label{sec:methods}
+
+\subsection{Source Documents (Training PDFs)}
+The dataset was derived from six official training manuals used in the
+nationwide calibration of oral-health evaluators.
+Each manual, distributed in PDF format, integrates
+(i) concise diagnostic guidelines and coding rules,
+(ii) photo series of volunteers captured under standardized conditions, and
+(iii) task-specific instructions describing the visual cues to be assessed
+in each image.
+Although pedagogically rich, these materials are confined to static
+documents and are therefore not directly suitable for computational use.
+To enable their reuse, we established a reproducible conversion pipeline that
+systematically extracts all embedded images in reading order,
+inherits contextual information from the original document
+(module title, volunteer identifier, image sequence),
+and harmonizes filenames under a unified naming convention.
+Table~\ref{tab:source-pdfs} summarizes the modules together with their page
+counts and file sizes.
+
+\paragraph*{Per-module scope.}
+\begin{itemize}
+  \item {Permanent dentition — DAI (malocclusion).}
+  Volunteer photo series for calibration on the Dental Aesthetic Index;
+  typically includes frontal and occlusal views to capture sagittal and
+  transversal deviations.
+  \item {Permanent dentition — CPO-D (caries experience).}
+  Training content for identifying decayed, missing, and filled teeth;
+  multi-view sequences emphasize crown visibility and restorative details.
+  \item {Primary dentition — ceo-d (caries experience).}
+  Analogous to CPO-D for children, depicting mixed-eruption stages and
+  child-specific morphology.
+  \item {Primary dentition — Occlusion.}
+  Classification of occlusal relationships in primary dentition
+  (e.g., overjet, overbite, crossbite), relying on standardized
+  frontal and lateral views.
+  \item {PUFA (pulpal involvement, ulceration, fistula, abscess).}
+  Close-up photographs highlighting advanced consequences of untreated
+  caries; typically high-contrast clinical views.
+  \item {Trauma.}
+  Recognition of dental trauma conditions (e.g., fractures, luxations)
+  from clinical photographs that exhibit higher variability in pose and
+  illumination.
+\end{itemize}
+
+\begin{table}[t]
+\centering
+\caption{Training manuals (source PDFs) from which the dataset was derived.}
+\label{tab:source-pdfs}
+\begin{tabular}{p{0.34\linewidth} p{0.28\linewidth} r r}
+\toprule
+\textbf{Portuguese title} & \textbf{English title} & \textbf{Pages} & \textbf{Size (MB)}\\
+\midrule
+Pranchetas fotografias — dentição permanente — DAI (treinamento) & Permanent dentition — DAI (training) & 135 & 17.49 \\
+Pranchetas fotografias — PUFA (treinamento) & PUFA (training) & 24 & 0.89 \\
+Pranchetas fotografias — traumatismo (treinamento) & Trauma (training) & 24 & 0.82 \\
+Pranchetas fotografias — dentição decídua — ceo-d (treinamento) & Primary dentition — ceo-d (training) & 111 & 9.61 \\
+Pranchetas fotografias — dentição decídua — Oclusão (treinamento) & Primary dentition — Occlusion (training) & 111 & 9.56 \\
+Pranchetas fotografias — dentição permanente — CPO-D (treinamento) & Permanent dentition — CPO-D (training) & 136 & 17.88 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/Manual page (PDF).png}
+    \caption{Page from a training manual (PDF).}
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/Pranchetas fotografias - PUFA - treinamento_Voluntario1.jpeg}
+    \caption{Extracted image with volunteer and sequence labels.}
+  \end{subfigure}
+  \caption{From training manuals to machine-readable samples. The extraction process preserves module identifiers and volunteer sequences.}
+  \label{fig:manual-to-image}
+\end{figure}
+
+The six manuals collectively provide a heterogeneous and context-rich image
+collection spanning children and adults, single-tooth close-ups and
+arch-level views, and both normative and pathological findings.
+Such diversity enables canonical computer-vision tasks including
+view classification (frontal, occlusal, lateral), image-quality assessment,
+and condition-specific screening.
+By preserving volunteer identifiers and per-module context during extraction,
+the dataset retains the pedagogical semantics of the source material while
+supporting research protocols such as volunteer-level data splits to prevent
+leakage and per-module evaluation to quantify domain shift.
+The resulting corpus mirrors real-world calibration scenarios and remains
+readily extensible to future labeling and model-development efforts.
+
+
+
+
+
+\subsection{Extraction and Organization}
+
+Let each training module be represented by a PDF document $\mathcal{D}$
+with ordered pages $\{P_p\}_{p=1}^{|\mathcal{D}|}$.
+Each page $P_p$ may embed zero or more raster figures (bitmaps)
+$\{I_{p,f}\}_{f=1}^{F_p}$ extracted in reading order.
+For every extracted bitmap, we record its pixel dimensions
+$(w_{p,f}, h_{p,f})$, byte size $s_{p,f}$, and the page canvas size
+$(W_p, H_p)$.
+
+\paragraph*{Logo and footer filtering.}
+Static branding elements and decorative footers are removed through a
+two-stage filter. First, a byte-size threshold eliminates small graphic
+icons:
+\begin{equation}
+\label{eq:size-th}
+\mathbb{1}_{\text{keep}}(I_{p,f}) \;\leftarrow\; [\, s_{p,f} > \tau \,],
+\qquad \tau = 30~\text{kB}.
+\end{equation}
+Second, to retain low-resolution clinical photographs,
+the condition is relaxed whenever the image occupies a non-trivial
+fraction of its page:
+\begin{equation}
+\label{eq:area-th}
+\mathbb{1}_{\text{keep}}(I_{p,f}) \;\leftarrow\;
+[\, s_{p,f} > \tau \,] \;\vee\;
+\bigg[\, \frac{w_{p,f}h_{p,f}}{W_pH_p} \ge \alpha \,\bigg],
+\qquad \alpha = 0.10 .
+\end{equation}
+Empirically, this rule removes repeated logos and footers while preserving
+genuine photographs with large spatial extent but small file size.
+In ambiguous cases, the candidate image is retained (high recall)
+and reviewed in later quality-control stages.
+
+\paragraph*{Volunteer segmentation.}
+Training modules typically include title slides that delimit the
+photo sequences of individual volunteers (e.g., ``Volunteer~$v$'').
+Anchors are detected either by regular-expression search on the text layer
+or by template matching on a predefined title region.
+Let $\{a_1 < a_2 < \dots < a_V\}$ denote the anchor page indices;
+the volunteer identifier for any page $p$ is then
+\begin{equation}
+\label{eq:vol-id}
+v(p) = \max\{\, j \in \{1,\dots,V\} : a_j \le p \,\}.
+\end{equation}
+When anchors are absent or too degraded (notably in ``PUFA'' and
+``Trauma'' modules), a deterministic stride is inferred from the
+module layout—defined by the first figure page $p_0$ and a fixed offset
+$\Delta$—so that $v(p) = 1 + \lfloor (p - p_0)/\Delta \rfloor$.
+This rule-based segmentation accurately reproduces the manuals'
+organization, as verified by manual spot checks.
+
+\paragraph*{Sequential indexing within volunteer.}
+For a given volunteer $v$, images are ordered lexicographically by
+$(p,f)$ and assigned a per-volunteer sequence number:
+\begin{equation}
+\label{eq:seq}
+\mathrm{seq}(I_{p,f}) = 1 +
+\big|\{\, I_{p',f'} : v(p') = v,\ (p',f') <_{\text{lex}} (p,f) \,\}\big|.
+\end{equation}
+
+\paragraph*{Canonical naming.}
+Each retained bitmap is renamed according to a standardized,
+human-readable pattern,
+\begin{equation}
+\label{eq:naming}
+\langle\text{module}\rangle\_\text{Voluntário}\,v\_\text{seq}.jpeg,
+\end{equation}
+where $\langle\text{module}\rangle$ denotes the normalized identifier
+of the PDF (e.g., *Permanent dentition – DAI (training)*),
+and $(v,\mathrm{seq})$ follow
+\eqref{eq:vol-id}–\eqref{eq:seq}.
+This naming convention remains stable across re-extractions and is
+collision-free within each module.
+
+\paragraph*{Manifest table.}
+All metadata are consolidated into a structured manifest table
+that supports reproducible analyses.
+For each image, the manifest records: file path, module identifier,
+volunteer ID, sequence index, and optional technical attributes
+(width, height, bytes, and page number).
+Let $\mathcal{M}$ denote the complete set of manifest entries.
+A uniqueness constraint is enforced to guarantee that
+\begin{equation}
+\label{eq:uniq}
+(\text{module}, \text{volunteer}, \text{seq})_{r_1}
+\neq
+(\text{module}, \text{volunteer}, \text{seq})_{r_2},
+\qquad \forall\, r_1 \neq r_2 \in \mathcal{M}.
+\end{equation}
+The resulting corpus and manifest provide a one-to-one correspondence
+between image files and metadata, enabling deterministic traceability
+throughout the pipeline. The extraction process is linear in the
+number of embedded figures and ensures complete coverage of all
+eligible photographs within the training manuals.
+
+
+\begin{algorithm}[t]
+\caption{PDF-to-Image Extraction and Organization}
+\label{alg:extract}
+\begin{algorithmic}[1]
+\Require PDF module $\mathcal{D}$; byte-size threshold $\tau$; area threshold $\alpha$; (optional) stride params $(p_0,\Delta)$
+\Ensure Image folder with canonical filenames; \texttt{manifest.csv}
+\Statex
+
+\Function{DetectAnchors}{$\mathcal{D}$}
+  \State $A \gets \emptyset$
+  \For{$p \gets 1$ to $|\mathcal{D}|$}
+    \State $\text{text} \gets$ OCR or text-layer of page $p$
+    \If{\textsf{regex}(\text{text}, \texttt{Volunt\'{a}rio}~$\backslash$d+)}
+      \State $A \gets A \cup \{p\}$ \Comment{anchor pages $a_1 < a_2 < \dots$}
+    \EndIf
+  \EndFor
+  \State \Return $A$
+\EndFunction
+
+\Function{VolunteerID}{$p, A, p_0, \Delta$}
+  \If{$|A| > 0$} \Comment{anchor-based, Eq.~(3)}
+    \State \Return $\max\{ j \,:\, a_j \in A,~ a_j \le p\}$
+  \Else \Comment{stride fallback for low-quality modules}
+    \State \Return $1 + \lfloor (p - p_0)/\Delta \rfloor$
+  \EndIf
+\EndFunction
+\Statex
+
+\State $A \gets$ \Call{DetectAnchors}{$\mathcal{D}$}
+\State initialize empty manifest $\mathcal{M}$ and per-volunteer counters $\text{seq}[v] \gets 0$
+\For{$p \gets 1$ to $|\mathcal{D}|$}
+  \State $(W_p, H_p) \gets$ canvas size of page $p$
+  \State $\mathcal{I}_p \gets$ bitmaps extracted from page $p$ in reading order
+  \For{each $I_{p,f} \in \mathcal{I}_p$}
+    \State $(w_{p,f}, h_{p,f}, s_{p,f}) \gets$ width, height, bytes of $I_{p,f}$
+    \State $\textsf{keep} \gets \big[s_{p,f} > \tau\big] ~\lor~ \big[\frac{w_{p,f}h_{p,f}}{W_pH_p} \ge \alpha \big]$ \Comment{Eqs.~(1)--(2)}
+    \If{$\textsf{keep}$}
+      \State $v \gets$ \Call{VolunteerID}{$p, A, p_0, \Delta$}
+      \State $\text{seq}[v] \gets \text{seq}[v] + 1$ \Comment{per-volunteer sequential index, Eq.~(4)}
+      \State $\texttt{fname} \gets$ \texttt{<module>\_volunteer}$v$\texttt{\_}$\text{seq}[v]$\texttt{.jpeg} \Comment{Eq.~(5)}
+      \State save $I_{p,f}$ as \texttt{fname}
+      \State append row to $\mathcal{M}$ with \{\texttt{filepath}, \texttt{pdf\_base}, \texttt{volunteer}=$v$, \texttt{seq}=$\text{seq}[v]$, \texttt{bytes}=$s_{p,f}$, \texttt{width}=$w_{p,f}$, \texttt{height}=$h_{p,f}$, \texttt{page}=$p$\}
+    \EndIf
+  \EndFor
+\EndFor
+\State enforce uniqueness over $(\texttt{pdf\_base}, \texttt{volunteer}, \texttt{seq})$ in $\mathcal{M}$ \Comment{Eq.~(6)}
+\State write $\mathcal{M}$ to \texttt{manifest.csv}
+\end{algorithmic}
+\end{algorithm}
+
+As a final result of this procedure, the images were extracted and presented organized as in the Figure \ref{fig:trauma} and \ref{fig:volunatios}.
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/TraumaDataset.png}
+    \caption{Images extracted from the PDF for training related to dental trauma.}
+    \label{fig:trauma}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/GaleriaVoluntarios.png}
+    \caption{Overview by extracted volunteers.}
+    \label{fig:volunatios}
+\end{figure}
+
+\subsection{Feature Embeddings}
+
+Let $\{I_i\}_{i=1}^{N}$ denote the curated images aligned with the dataset manifest.
+Each image is encoded by a fixed, deterministic embedding function
+$\phi(\cdot)$ that maps pixel intensities to a $D$-dimensional feature vector:
+\begin{equation}
+\label{eq:embed}
+\mathbf{z}_i = \phi(I_i) \in \mathbb{R}^{D}, \qquad D = 6272.
+\end{equation}
+The resulting feature matrix $\mathbf{Z} = [\mathbf{z}_1^\top;\dots;\mathbf{z}_N^\top]
+\in \mathbb{R}^{N\times D}$ provides a compact numerical representation of the entire image set.
+
+For each image $I_i$, the embedding $\phi(\cdot)$ is defined as the concatenation
+of luminance and gradient descriptors,
+\begin{equation}
+\phi(I_i) = [\,\text{down}(I_i),\, \text{down}(\nabla I_i)\,],
+\end{equation}
+capturing both low-frequency appearance and local edge structure relevant to dental anatomy.
+
+The embeddings were subsequently projected onto a lower-dimensional manifold using
+Principal Component Analysis (PCA) for exploratory visualization and cluster-based
+inspection, as detailed in Section~\ref{sec:unsupervised}.
+
+This deterministic, handcrafted design ensures full reproducibility and efficiency
+in low-resource environments, while remaining compatible with future deep-learning
+backbones that can replace $\phi(\cdot)$ without altering the analytical pipeline.
+
+
+\subsection{Feature Extraction and Representation}
+
+Each extracted image $I_i$ was converted to grayscale and resampled to a
+uniform spatial grid, preserving both luminance and edge information.
+The luminance channel was computed as a weighted combination of RGB
+intensities:
+\begin{equation}
+I_i(x, y) = 0.299\,R(x, y) + 0.587\,G(x, y) + 0.114\,B(x, y).
+\end{equation}
+
+To enhance structural interpretability, gradient magnitudes were also
+included:
+\begin{equation}
+\nabla I_i = \sqrt{(\partial_x I_i)^2 + (\partial_y I_i)^2}.
+\end{equation}
+
+The final feature vector concatenates the intensity and gradient components
+after spatial averaging:
+\begin{equation}
+\mathbf{f}_i = [\,\text{down}(I_i),\, \text{down}(\nabla I_i)\,],
+\end{equation}
+thus capturing both textural and structural cues directly related to dental
+anatomy. This handcrafted representation maintains a transparent
+relationship between pixel gradients and visible features, enabling
+interpretable downstream analysis.
+
+\paragraph*{Preprocessing and determinism.}
+All embeddings were generated offline with fixed configuration parameters
+for decoding, color conversion, and descriptor computation.
+The entire procedure is deterministic, ensuring full reproducibility
+and a stable feature space for unsupervised exploration and baseline modeling.
+
+\paragraph*{Standardization for modeling.}
+Downstream analyses operate on standardized features. Given training
+indices $\mathcal{T}$ (volunteer-aware split), the per-dimension mean
+and standard deviation are computed as
+\begin{equation}
+\boldsymbol{\mu} = \frac{1}{|\mathcal{T}|}\!\sum_{i\in\mathcal{T}}\!\mathbf{z}_i,\quad
+\boldsymbol{\sigma} = \sqrt{\frac{1}{|\mathcal{T}|}\!\sum_{i\in\mathcal{T}}\!
+(\mathbf{z}_i-\boldsymbol{\mu})^{\odot2}+\varepsilon},
+\end{equation}
+and z-normalization is applied:
+\begin{equation}
+\label{eq:zscore}
+\tilde{\mathbf{z}}_i = (\mathbf{z}_i - \boldsymbol{\mu}) \oslash \boldsymbol{\sigma}.
+\end{equation}
+All subsequent procedures (clustering, PCA, and classification) use
+the standardized matrix $\tilde{\mathbf{Z}}$ from~\eqref{eq:zscore}.
+
+\paragraph*{Dimensionality reduction.}
+For visualization, a linear projection to $d{=}2$ is obtained through
+principal component analysis (PCA)~\cite{abdi2010principal}:
+\begin{equation}
+\mathbf{y}_i^{(2\mathrm{D})} = \mathbf{W}_2^\top\tilde{\mathbf{z}}_i \in \mathbb{R}^2.
+\end{equation}
+For baseline classification, a 128-dimensional projection is used:
+\begin{equation}
+\label{eq:pca128}
+\mathbf{u}_i = \mathbf{W}_{128}^\top \tilde{\mathbf{z}}_i,
+\end{equation}
+feeding $\mathbf{u}_i$ into a linear SVM~\cite{joachims2006training}.
+PCA parameters are estimated only on the training set
+and consistently applied to held-out data.
+
+\paragraph*{Similarity and compactness.}
+Clustering minimizes intra-cluster variance,
+\begin{equation}
+\min_{\{\mathbf{c}_k\}} \sum_i \|\,\tilde{\mathbf{z}}_i-\mathbf{c}_{a(i)}\,\|^2,
+\end{equation}
+where $\mathbf{c}_k$ denotes the centroid of cluster $k$.
+Similarity between two embeddings is quantified either by cosine affinity,
+\begin{equation}
+\mathrm{cos}(\mathbf{z}_i,\mathbf{z}_j) =
+\frac{\mathbf{z}_i^\top\mathbf{z}_j}{\|\mathbf{z}_i\|_2\,\|\mathbf{z}_j\|_2},
+\end{equation}
+or by Euclidean distance. The overall compactness metric reported in the
+analysis corresponds to the mean intra-cluster distance:
+\begin{equation}
+\label{eq:compact}
+\mathcal{C} = \frac{1}{\sum_k |S_k|}
+\sum_k \sum_{i\in S_k}\|\tilde{\mathbf{z}}_i - \bar{\mathbf{z}}_{(k)}\|_2,
+\quad
+\bar{\mathbf{z}}_{(k)}=\frac{1}{|S_k|}\sum_{i\in S_k}\tilde{\mathbf{z}}_i.
+\end{equation}
+
+\paragraph*{Feature statistics.}
+The resulting embeddings form a high-dimensional matrix
+in which each row represents an image and each column corresponds
+to an activation in the latent feature space.
+In total, 1323 samples were processed, producing 6272-dimensional
+feature vectors per image. The statistical summary of this distribution
+is presented in Table~\ref{tab:feature_summary}, showing normalized
+activation values within a bounded range and a balanced dispersion
+across dimensions.
+
+\begin{table}[ht]
+\centering
+\caption{Summary statistics of the extracted feature embeddings.}
+\label{tab:feature_summary}
+\begin{tabular}{l c}
+\hline
+\textbf{Metric} & \textbf{Value} \\
+\hline
+Samples ($N$) & 1323 \\
+Feature dimensions ($D$) & 6272 \\
+Mean & 0.265 \\
+Standard deviation & 0.282 \\
+Minimum & 0.000 \\
+Maximum & 1.000 \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph*{Rationale.}
+Fixed, handcrafted embeddings offer an efficient foundation for
+(i) unsupervised exploration (PCA maps and outlier detection),
+(ii) lightweight baseline modeling without GPU requirements, and
+(iii) active, human-in-the-loop annotation, where uncertainty and
+nearest neighbors are computed directly in the feature space.
+This design preserves interpretability and low computational cost,
+while remaining compatible with future deep-learning descriptors
+that can replace $\phi(\cdot)$ without altering the surrounding pipeline.
+
+
+
+\section{Unsupervised Exploration} \label{sec:unsupervised}
+\subsection{Clustering and PCA}
+We first assess whether view-related structure emerges without labels. Let $\tilde{\mathbf{Z}}\in\mathbb{R}^{N\times D}$ denote standardized embeddings (Sec.~3.3). We apply k-means to $\tilde{\mathbf{Z}}$ with a small number of clusters ($k\in\{2,3\}$) and then visualize the geometry via a 2-D PCA projection,
+\begin{equation}
+\mathbf{Y} \;=\; \tilde{\mathbf{Z}}\mathbf{W}_2,\quad \mathbf{W}_2 \in \mathbb{R}^{D\times 2},
+\end{equation}
+coloring points by their cluster assignment. Despite the heterogeneity across modules (children/adults, single-tooth vs.\ arch-level, illumination), clusters form visibly coherent regions that align with expected view modes (e.g., frontal vs.\ occlusal in permanent dentition), indicating that view separation is a {low-signal} but tractable structure for unsupervised models.
+
+In this exploratory phase, we used $k=2$, corresponding to the two predominant anatomical perspectives (frontal and occlusal), which emerged as the most separable structures in the embedding space.
+
+To quantify utility, we mapped clusters to view labels via a per-dataset majority rule (weak supervision). A lightweight classifier trained on these weak labels reached about {0.67} accuracy under a volunteer-level split—already useful to bootstrap curation. This establishes that unlabeled training material contains sufficient regularities to support downstream tasks such as tooth-region focusing and pose-aware screening (e.g., learning where to look for incisors vs.\ molars given the view).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (global view). View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-global}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca__Pranchetas fotografias - denti__o dec_dua - ceod treinamento.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (Permanent Dentition-cod-d) View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-ceod}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca__Pranchetas fotografias - denti__o dec_dua - Oclus_o treinamento.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (Permanent Dentition- Occlusion (training)). View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-oclusao}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca__Pranchetas fotografias - denti__o permanente - CPOD treinamento.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (Permanent Dentition-CPO-D). View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-cpo}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca__Pranchetas fotografias - denti__o permanente - DAI treinamento.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (Permanent Dentition-DAI). View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-dai}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca__Pranchetas fotografias - PUFA - treinamento.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (PUFA). View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-pufa}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\linewidth]{figures/clusters_pca__Pranchetas fotografias - traumatismo - treinamento.png}
+  \caption{2-D PCA of fixed embeddings colored by k-means clusters (Trauma (training)). View-related structure emerges even without labels, enabling weak supervision.}
+  \label{fig:pca-trauma}
+\end{figure}
+
+\section{Experiments and Results} \label{sec:results}
+
+\subsection{Experiment-Interactive Labeling Workflow} \label{sec:labeler}
+\subsubsection{Labeler} \label{labeler}
+To convert weak signals into reliable supervision, we introduce a one-sample reviewer that displays the image, the current prediction, and a confidence margin. The annotator clicks {Correct/Incorrect} and, when needed, selects the true class (frontal/occlusal/lateral/other) (See Fig. \ref{fig:labeler2} and Fig. \ref{fig:labelerchoose}). 
+We order candidates by margin (decision-function gap), surfacing ambiguous cases first. This accelerates convergence: a short pass over low-margin images corrected the dominant failure modes induced by weak labels, with minimal annotation effort.
+Following Sec.~\ref{labeler}, we z-normalize features and apply PCA to $d{=}128$,
+\begin{equation}
+\mathbf{u}_i \;=\; \mathbf{W}_{128}^\top \tilde{\mathbf{z}}_i \in \mathbb{R}^{128},
+\end{equation}
+then train a linear SVM (balanced, $C{=}1.0$). This compact pipeline is deterministic, GPU-free, and suitable for rapid iterations during curation.
+
+After each annotation round, the classifier parameters are updated over the expanded labeled set $L_t$:
+\begin{equation}
+\theta^{(t+1)} = \arg\min_{\theta} \sum_{i \in L_t} \ell(f_\theta(\mathbf{x}_i), y_i),
+\end{equation}
+where $\ell(\cdot)$ is the hinge loss and $L_t$ the samples labeled up to iteration $t$.
+
+\subsubsection{Evaluation Protocol}
+We adopted a 70/30 split {by volunteer} within each module to prevent subject-level leakage; that is, all images from a given volunteer appear exclusively in either the training or test set. Evaluation metrics were computed on the held-out volunteers using both macro- and weighted-averaging. Unless otherwise specified, the analysis focuses on permanent dentition and a two-class problem distinguishing frontal and occlusal views.
+\begin{table}[t]
+\centering
+\caption{Volunteer-level test results (permanent dentition, frontal vs.\ occlusal).}
+\label{tab:results}
+\begin{tabular}{lcccc}
+\toprule
+Class & Precision & Recall & F1 & Support \\
+\midrule
+Frontal  & 1.000 & 0.928 & 0.962 & 69 \\
+Occlusal & 0.932 & 1.000 & 0.965 & 69 \\
+\midrule
+\textbf{Accuracy} & \multicolumn{4}{c}{\textbf{0.964}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+To ensure a homogeneous dataset, we first filtered out all {lateral} views and retained only frontal and occlusal images. An initial model trained on weak pseudo-labels generated from unsupervised clustering achieved approximately {67\%} accuracy. This baseline provided a meaningful starting point despite the absence of curated labels.
+
+Subsequently, we conducted a lightweight human-in-the-loop validation phase in which experts corrected a subset of low-confidence predictions, especially in borderline cases between frontal and occlusal perspectives. Approximately 30\% of the low-confidence predictions were manually reviewed and corrected during this validation phase, focusing on borderline cases between frontal and occlusal perspectives. 
+ Incorporating these refined annotations into the same training pipeline led to a significant performance increase, reaching {96.4\%} accuracy with balanced precision and recall across classes (Table~\ref{tab:results}). This demonstrates that even partially labeled training material can be converted into a high-signal supervision source with minimal expert intervention.
+ The resulting confusion matrix (Fig. \ref{fig:cm}) summarizes the classifier’s performance across the two PUFA categories.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.75\linewidth]{figures/view_confusion_matrix.png}
+  \caption{Confusion matrix (volunteer-level split) for permanent dentition (frontal vs.\ occlusal) after interactive labeling.}
+  \label{fig:cm}
+\end{figure}
+
+
+\subsection{Error Analysis}
+Misclassifications concentrated on borderline poses (partial arches, tilted cameras) and low-resolution captures. The uncertainty-ranking strategy exposed these early, so a small number of corrections removed entire error clusters. Residual errors are consistent with expected edge cases (e.g., transitional views between frontal and occlusal).
+
+\subsection{Interactive Visualization and Expert Feedback Tools}
+The proposed pipeline includes a monitoring interface that summarizes dataset statistics, module coverage, and experiment results. 
+The dashboard (Fig.~\ref{fig:dashboard}) provides a unified view of all curated artifacts, automatically counting extracted images, listing modules, and confirming the existence of derived metadata (CSV manifests, clusters, and confusion matrices). 
+This overview facilitates traceability and reproducibility across multiple experiments.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/dashboard.png}
+\caption{Dashboard interface summarizing curated images, extracted modules, and generated metadata for reproducible experiments.}
+\label{fig:dashboard}
+\end{figure}.
+
+A visual browser allows users to navigate the extracted corpus by module, volunteer, or cluster. 
+As shown in Fig.~\ref{fig:gallery1} and Fig.~\ref{fig:gallery2}, the gallery view displays intraoral photographs sampled from the selected training PDFs, grouped by acquisition sequence. 
+This visualization supports rapid verification of data integrity and cross-module consistency.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/galery1.png}
+\caption{Dataset browser showing filtered module selection and image listing by volunteer sequence.}
+\label{fig:gallery1}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/galery2.png}
+\caption{Sample images from a selected module, enabling visual inspection of extracted photographs.}
+\label{fig:gallery2}
+\end{figure}
+
+These tools create a practical bridge between computational analysis and human calibration workflows.
+
+An uncertainty-based labeling interface (Fig.~\ref{fig:labeler}) enables experts to iteratively validate or correct predictions made by the classifier. 
+Samples are ranked by decision-margin uncertainty, prioritizing ambiguous cases for review. 
+As illustrated in Fig.~\ref{fig:labeler2}–\ref{fig:labelerchoose}, users can confirm or adjust predicted labels and immediately store the updated annotation to CSV format, enabling incremental retraining.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/Labeler.png}
+\caption{Interactive labeling interface showing sample filtering and progress tracking.}
+\label{fig:labeler}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/Labeler2.png}
+\caption{Labeling view with classifier prediction, image details, and uncertainty margin.}
+\label{fig:labeler2}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/LabelerChoose.png}
+\caption{Expert validation interface for confirming or correcting predicted labels.}
+\label{fig:labelerchoose}
+\end{figure}
+
+For transparency and error auditing, the system automatically generates a detailed performance report (Fig.~\ref{fig:reports}). 
+The report includes per-class precision, recall, F1-score, and confusion matrices, as well as links to an HTML gallery of misclassified samples (Fig. \ref{fig:missclassified}) for visual error tracing.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.95\linewidth]{figures/reports.png}
+\caption{Automated performance report summarizing class-wise metrics and audit tools for misclassification review.}
+\label{fig:reports}
+\end{figure}
+
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/missclassification.png}
+    \caption{Missclassified images}
+    \label{fig:missclassified}
+\end{figure}
+
+
+\section{Limitations and Ethical Considerations} \label{sec:ethics}
+While the proposed pipeline is reproducible and deterministic, several limitations remain. 
+First, source quality varies across modules: some manuals include low–resolution or highly compressed JPEGs, which can constrain downstream performance and complicate automated filtering. 
+Second, the scope of this release is bounded by the available training PDFs and may not cover all clinical presentations or acquisition conditions encountered in the field. 
+Third, weak supervision from unsupervised clusters can propagate early biases; although uncertainty-driven review mitigates this effect, residual errors may persist in borderline poses (e.g., transitional views between frontal and occlusal).
+
+From an ethical standpoint, this study is based exclusively on publicly available calibration manuals from the {SB Brasil 2023} National Oral Health Survey, distributed by the Brazilian Ministry of Health for educational and training purposes. These materials contain no identifiable personal information and are publicly accessible as part of national examiner calibration efforts.
+
+The original SB Brasil 2023 project, which authorized the collection and use of these visual materials, was reviewed and approved by the {National Commission of Ethics in Research (CONEP)} under CAAE 34497120.6.3001.0008, opinion number 4.823.054, on July 3, 2021. 
+
+All analyses reported in this study comply with the principles of the Declaration of Helsinki and adhere to Brazilian research ethics regulations (CNS Resolution 466/2012). Since this work uses only de-identified, publicly available data, no additional institutional review board (IRB) approval was required. 
+Licensing and redistribution of derived images should follow the terms of the original manuals, and any future clinical or operational deployment will require independent validation and ethical oversight.
+
+
+
+\section{Conclusion}\label{sec:conclusion}
+This work demonstrates a practical, end-to-end method to unlock real, contextual dental images from public training PDFs and to turn them into a machine-readable dataset suitable for computer-vision research. 
+The proposed {SBBrasil TrainSheets} pipeline (i) extracts and organizes images with volunteer-level traceability, (ii) computes fixed embeddings that enable unsupervised exploration and rapid quality control, and (iii) integrates a human-in-the-loop reviewer that prioritizes uncertain samples. 
+On permanent dentition (frontal vs.\ occlusal) and a volunteer-level split, a compact baseline (StandardScaler $\rightarrow$ PCA(128) $\rightarrow$ linear SVM) improved from $\sim$0.67 accuracy with weak labels to {96.4\%} after a short calibration pass, indicating that the training material can be transformed into reliable supervision with modest expert effort. 
+Beyond a single classifier, the artifacts---images, manifest, embeddings, clustering maps, dashboard, and labeling UI---constitute a reusable substrate for future studies in dental computer vision and public-health informatics.
+
+
+About future work, we see three immediate directions: 
+{(1) Dataset expansion and taxonomy.} Extend coverage to additional manuals, incorporate lateral views explicitly, and refine view taxonomies for mixed dentition. 
+{(2) Richer tasks.} Leverage the curated images for tooth-region localization, lesion/trauma screening, image-quality assessment, and pose-aware retrieval; replace the fixed descriptor with modern deep backbones while keeping the same engineering interfaces. 
+{(3) Human-in-the-loop at scale.} Integrate active-learning loops that combine margin sampling with volunteer-aware diversity, audit labeling consistency over time, and study how few expert interactions are needed to reach clinically useful performance. 
+Longer term, we aim to release periodic dataset updates and reference baselines to help standardize evaluation across dental view classification and related tasks.
+
+\section*{Acknowledgment}
+This work was supported by national funds through FCT (Fundação para a Ciência e a Tecnologia), under the project - UIDB/04152 - Centro de Investigação em Gestão de Informação (MagIC)/NOVA IMS.
+The authors also acknowledge the Brazilian Ministry of Health for providing access to the calibration materials and public documentation from the {SB Brasil 2023} National Oral Health Survey, which made this research possible.
+
+
+\appendixautorefname{Data and Code Availability}
+All scripts required to reproduce the dataset construction and the reported
+experiments are released under an open-source license.\footnote{{Repo:}
+\url{https://github.com/pdecampossouza/Pipeline-for-Oral-Health-Images}. {Archive (versioned):}
+\url{<add-your-doi-or-osf-archive>}.} We distribute {code and metadata};
+redistribution of derived images must comply with the terms of the original
+training manuals (see license file in the repository). When redistribution is
+not permitted, our scripts regenerate all artifacts locally from the public PDF
+manuals provided by the program.
+
+\paragraph{What it release.}
+\begin{itemize}
+  \item \texttt{code\_extraction/} (deterministic PDF $\rightarrow$ image pipeline): 
+  \texttt{extract\_from\_pdfs.py}, \texttt{rename\_by\_volunteer.py}, helpers.
+  \item \texttt{unsupervised\_kit/} (embeddings, clustering, baseline, UI): 
+  \texttt{features.py}, \texttt{cluster\_views.py}, \texttt{visualize\_clusters.py},
+  \texttt{baseline\_train\_save\_preds.py}, \texttt{miscls\_gallery.py},
+  \texttt{export\_for\_labeling.py}, \texttt{labeler.py} (Streamlit),
+  \texttt{apply\_labels\_and\_retrain.py}, \texttt{dashboard.py}.
+  \item \texttt{metadata/} (generated): \texttt{manifest.csv},
+  \texttt{features.npy}, \texttt{clusters.csv}, \texttt{views.csv}
+  (after labeling), figures (PCA maps, confusion matrix).
+\end{itemize}
+
+\paragraph{Reproducible environment.}
+Python~$\ge$~3.10; we provide \texttt{requirements.txt}. Experiments are
+deterministic via fixed random seeds and a volunteer-level split.
+
+\paragraph{Reproducibility checklist.}
+\begin{itemize}
+  \item {Manifest schema} (\texttt{manifest.csv}): 
+  \texttt{filepath}, \texttt{pdf\_base}, \texttt{voluntario}, \texttt{seq}, \texttt{bytes}.
+  \item {Embeddings}: \texttt{features.npy} shape $(N, D)$ with fixed $D$ (documented in code).
+  \item {Split}: 70/30 by {volunteer} within each module to avoid leakage.
+  \item {Seeds}: fixed in clustering and in the baseline pipeline.
+  \item {Figures}: PCA maps and confusion matrix are regenerated under \texttt{metadata/}.
+\end{itemize}
+
+\paragraph{Licensing and use.}
+Code is released under an OSI-approved license. The manuals are owned by the
+original program; redistribution of derived images may be restricted. Our
+repository includes guidance to (a) verify checksums of the PDFs, (b) rebuild
+all images locally, and (c) track provenance through the manifest.
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
