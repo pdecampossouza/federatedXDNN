@@ -42,7 +42,7 @@ ProtoPNet+xDNN/
 
 ## ⚙️ Installation
 
-```bash
+
 git clone https://github.com/<your-username>/Federated-xDNN.git
 cd Federated-xDNN
 python -m venv .venv
@@ -51,14 +51,12 @@ python -m venv .venv
 pip install -r requirements.txt
 Required packages (if you don’t use requirements.txt):
 
-nginx
-Copiar código
+
 torch torchvision numpy scikit-learn scipy shap matplotlib opencv-python
 🏗️ Federated Encoder Training
 Train a global encoder collaboratively across all client datasets.
 
-bash
-Copiar código
+
 python fed_xdnn.py --mode federated \
   --clients_root data/clients \
   --rounds 5 --local_epochs 1 --batch_size 32 --lr 3e-4 \
@@ -69,8 +67,7 @@ This performs FedAvg (or FedProx if --fedprox_mu > 0) to stabilize training with
 🧠 Local xDNN Training
 Each site uses the global encoder to build its local explainable model:
 
-bash
-Copiar código
+
 python fed_xdnn.py --mode local_xdnn \
   --clients_root data/clients --client_id siteA \
   --encoder_path encoder_global.pt \
@@ -86,8 +83,7 @@ Saved model: siteA_xdnn.pkl (or siteB_xdnn.pkl)
 🔍 SHAP-Based Prototype Explanation
 Generate interpretability heatmaps for prototypes and their most similar images.
 
-bash
-Copiar código
+
 python analyze_prototypes_shap.py \
   --clients_root data/clients --client_id siteA \
   --encoder_path encoder_global.pt --xdnn_path siteA_xdnn.pkl \
@@ -121,8 +117,6 @@ Prototype visualization confirms that xDNN focuses on semantically meaningful pa
 📚 Citation
 If you use this code or findings, please cite:
 
-bibtex
-Copiar código
 @article{Souza2025FederatedxDNN,
   title     = {Federated xDNN for Interpretable Dental View Classification},
   author    = {Paulo Vitor de Campos Souza},
